@@ -93,7 +93,7 @@ class lineController extends Controller
                 $conversationRef = $activeConversation['id'];
 
                 // ส่งเมนูตัวเลือกให้ลูกค้าเลือก
-                $sendMenu = $this->lineService->sendMenu($custId, $TOKEN);
+                $sendMenu = $this->lineService->sendMenu($custId, $TOKEN,$activeConversation['id']);
                 if (!$sendMenu['status']) throw new \Exception($sendMenu['message']);
                 else $checkSendMenu = true;
 
@@ -155,7 +155,7 @@ class lineController extends Controller
             $R = $rate ?? $checkRates;
             if ($R['latestRoomId'] === 'ROOM00') {
                 if (!$checkSendMenu) {
-                    $change = $this->lineService->handleChangeRoom($chatHistory['content'], $R, $TOKEN);
+                    $change = $this->lineService->handleChangeRoom($chatHistory['content'], $R, $TOKEN,$conversationRef);
                         $change['status'] ?? throw new \Exception($change['message']);
                 }
             }

@@ -4,8 +4,11 @@ namespace App\Services;
 
 use App\Models\ActiveConversations;
 use App\Models\botMenu;
+use App\Models\ChatHistory;
 use App\Models\ChatRooms;
+use App\Models\Customers;
 use App\Models\Rates;
+use App\Models\User;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -47,9 +50,10 @@ class LineService
 //        return asset('storage/' . $imagePath);
     }
 
-    public function sendMenu($custId, $token): array
+    public function sendMenu($custId, $token,$activeConversationId): array
     {
         try {
+            $customer = Customers::where('custId', $custId)->first();
             $botMenus = botMenu::select('bot_menus.menuName')
                 ->join('platform_access_tokens', 'bot_menus.botTokenId', '=', 'platform_access_tokens.id')
                 ->join('customers', 'platform_access_tokens.id', '=', 'customers.platformRef')
@@ -75,6 +79,10 @@ class LineService
                 "to" => $custId,
                 'messages' => [
                     [
+                        'type' => 'text',
+                        'text' => "สวัสดีคุณ ".$customer['custName']." เพื่อให้การบริการที่รวดเร็ว กรุณาเลือกหัวด้านล่างเพื่อส่งต่อให้เจ้าหน้าที่เพื่อมาบริการท่านต่อไป  ขอบคุณครับ/ค่ะ",
+                    ],
+                    [
                         'type' => 'template',
                         'altText' => 'this is a buttons template',
                         'template' => [
@@ -88,6 +96,20 @@ class LineService
             ];
             $res = $this->linePushMessage($token, $body);
             if ($res['status']) {
+                $chat = new ChatHistory();
+                $chat['custId'] = $custId;
+                $chat['content'] = "สวัสดีคุณ ".$customer['custName']." เพื่อให้การบริการที่รวดเร็ว กรุณาเลือกหัวด้านล่างเพื่อส่งต่อให้เจ้าหน้าที่เพื่อมาบริการท่านต่อไป  ขอบคุณครับ/ค่ะ";
+                $chat['contentType'] = 'text';
+                $chat['sender'] = json_encode([
+                    'empCode' => 'BOT',
+                    'name' => 'BOT'
+                ]);
+                $chat['conversationRef'] = $activeConversationId;
+                if ($chat->save()){
+                    Log::info('saves');
+                }else{
+                    Log::info('not saves');
+                }
                 $data['status'] = true;
                 $data['message'] = $res['message'];
             } else throw new \Exception($res['message']);
@@ -99,14 +121,16 @@ class LineService
         }
     }
 
-    public function handleChangeRoom($content, $rate, $token): array
+    //BOT เปลี่ยนห้อง
+    public function handleChangeRoom($content, $rate, $token,$conversationRef): array
     {
+        $detail = "ระบบกำลังส่งต่อให้เจ้าหน้าที่ที่รับผิดชอบเพื่อเร่งดำเนินการเข้ามาสนทนา กรุณารอสักครู่";
         try {
             $custId = $rate['custId'];
             $updateRate = Rates::where('id', $rate['id'])->first();
             DB::beginTransaction();
             $chatRooms = ChatRooms::select('roomId', 'roomName')->get();
-            $text = 'พนักงานที่รับผิดชอบ';
+
             foreach ($chatRooms as $key => $chatRoom) {
                 $check = botMenu::where('menuName', $content)->first();
                 Log::info("บอทเปลี่ยนห้อง RateId >> $rate->id");
@@ -125,6 +149,13 @@ class LineService
                     $AC['from_roomId'] = 'ROOM00';
                     $AC['rateRef'] = $rate['id'];
                     $AC->save();
+                    $body = [
+                        "to" => $custId,
+                        'messages' => [[
+                            'type' => 'text',
+                            'text' => "ระบบกำลังส่งต่อให้เจ้าหน้าที่ที่รับผิดชอบเพื่อเร่งดำเนินการเข้ามาสนทนา กรุณารอสักครู่",
+                        ]]
+                    ];
                     break;
                 } else {
                     if ($key === count($chatRooms) - 1) {
@@ -140,16 +171,34 @@ class LineService
                         $AC['from_roomId'] = 'ROOM00';
                         $AC['rateRef'] = $rate['id'];
                         $AC->save();
+                        $body = [
+                            "to" => $custId,
+                            'messages' => [[
+                                'type' => 'text',
+                                'text' => "ระบบกำลังส่งต่อให้เจ้าหน้าที่ที่รับผิดชอบเพื่อเร่งดำเนินการเข้ามาสนทนา กรุณารอสักครู่",
+                            ]]
+                        ];
                     }
                 }
             }
-            $body = [
-                "to" => $custId,
-                'messages' => [[
-                    'type' => 'text',
-                    'text' => "ระบบกำลัง $text กรุณารอพนักงานรับเรื่องและตอบกลับครับ/ค่ะ🙏",
-                ]]
-            ];
+
+
+            // สร้าง chatHistory ด้วย
+            Log::info('Test');
+            $chat = new ChatHistory();
+            $chat['custId'] = $custId;
+            $chat['content'] = $detail;
+            $chat['contentType'] = 'text';
+            $chat['sender'] = json_encode([
+                'empCode' => 'BOT',
+                'name' => 'BOT'
+            ]);
+            $chat['conversationRef'] = $conversationRef;
+            if ($chat->save()){
+                Log::info('saves');
+            }else{
+                Log::info('not saves');
+            }
 
             $res = $this->linePushMessage($token, $body);
             if ($res['status']) {
